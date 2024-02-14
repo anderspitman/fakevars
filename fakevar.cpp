@@ -2,21 +2,45 @@
 #include <cstddef>
 #include <iostream>
 #include <fstream>
+#include <random>
+
+//enum class Genotype : uint8_t {
+//    AA = 0x30, AC, AG, AT,
+//    CC, CG, CT,
+//    GG, GT,
+//    TT,
+//};
+
+//const int NUM_GENOTYPES = 10;
+//const char* GENOTYPE_TABLE[NUM_GENOTYPES] = {
+//    "A/A", "A/C", "A/G", "A/T",
+//    "C/C", "C/G", "C/T",
+//    "G/G", "G/T",
+//    "T/T",
+//};
+
+const uint64_t NUM_BASES = 4;
+const char BASES[NUM_BASES] = { 'A', 'C', 'G', 'T' };
+
+const uint64_t GENOTYPE_SIZE = 2;
 
 const uint64_t BASE_SIZE = 2;
 struct Base {
-    uint8_t genotype;
+    char val;
     uint8_t qual;
 };
 
-const uint64_t TRUE_GENO_SIZE = 1;
 struct Sample {
-    uint8_t true_genotype;
+    char true_genotype[GENOTYPE_SIZE];
     Base* bases;
 };
 
 struct Locus {
     Sample* samples;
+};
+
+struct AllData {
+    Locus* loci;
 };
 
 struct Fakevar {
@@ -28,28 +52,44 @@ struct Fakevar {
     uint64_t size;
 };
 
+std::random_device dev;
+std::mt19937 rng(dev());
+std::uniform_int_distribution<std::mt19937::result_type> base_dist(0, NUM_BASES-1);
+std::uniform_int_distribution<std::mt19937::result_type> geno_dist(0, GENOTYPE_SIZE-1);
 
-void gen_base_array(uint8_t* data, uint64_t depth) {
+const uint64_t MIN_PHRED_QUAL = 0x21;
+const uint64_t MAX_PHRED_QUAL = 0x7e;
+std::uniform_int_distribution<std::mt19937::result_type> qual_dist(MIN_PHRED_QUAL, MAX_PHRED_QUAL);
+
+
+void gen_base_array(uint8_t* data, uint64_t depth, char* true_genotype) {
 
     uint8_t* ptr;
     for (uint64_t i = 0; i < depth; i++) {
+        // Sample randomly from true_genotype
+        auto idx = geno_dist(rng);
         ptr = (uint8_t*)&(data[i*BASE_SIZE]);
-        // genotype
-        ptr[0] = 0x41;
-        // qual
-        ptr[1] = 0x42;
+        ptr[0] = true_genotype[idx];
+        auto qual = qual_dist(rng);
+        ptr[1] = qual;
     }
 }
 
 void gen_sample(uint8_t* data, uint64_t depth) {
-    data[0] = 0x43;
-    gen_base_array(data + TRUE_GENO_SIZE, depth);
+
+    auto base_1 = base_dist(rng);
+    auto base_2 = base_dist(rng);
+
+    // true_genotype
+    data[0] = BASES[base_1];
+    data[1] = BASES[base_2];
+    gen_base_array(data + GENOTYPE_SIZE, depth, (char*)data);
 }
 
 void gen_locus(uint8_t* data, uint64_t num_samples, uint64_t depth) {
 
     const uint64_t base_array_size = depth*BASE_SIZE;
-    const uint64_t sample_size = TRUE_GENO_SIZE + base_array_size;
+    const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
 
     uint8_t* ptr = data;
 
@@ -62,7 +102,7 @@ void gen_locus(uint8_t* data, uint64_t num_samples, uint64_t depth) {
 Fakevar* fakevar_create(uint64_t num_loci, uint64_t num_samples, uint32_t depth) {
 
     const uint64_t base_array_size = depth*BASE_SIZE;
-    const uint64_t sample_size = TRUE_GENO_SIZE + base_array_size;
+    const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
     const uint64_t locus_size = sample_size*num_samples;
     const uint64_t total_size = locus_size*num_loci;
 
@@ -80,7 +120,7 @@ Fakevar* fakevar_create(uint64_t num_loci, uint64_t num_samples, uint32_t depth)
     fv->size = total_size;
 
     for (uint64_t i = 0; i < total_size; i++) {
-        fv->data[i] = 0x55;
+        fv->data[i] = 0x58;
     }
 
     uint8_t* ptr = fv->data;
@@ -102,7 +142,7 @@ void print_base(uint8_t* data, uint64_t indent) {
     do_indent(indent);
     std::cout << "Base:" << std::endl;
     do_indent(indent + 2);
-    std::cout << "genotype: " << data[0] << std::endl;
+    std::cout << "value: " << data[0] << std::endl;
     do_indent(indent + 2);
     std::cout << "qual: " << data[1] << std::endl;
 }
@@ -111,14 +151,26 @@ void print_sample(uint8_t* data, uint64_t depth, uint64_t indent) {
     do_indent(indent);
     std::cout << "Sample:" << std::endl;
     do_indent(indent + 2);
-    std::cout << "true_genotype: " << data[0] << std::endl;
+    std::cout << "true_genotype: " << data[0] << "/" << data[1] << std::endl;
+
     do_indent(indent + 2);
     std::cout << "bases:" << std::endl;
-
+    do_indent(indent + 4);
     for (uint64_t i = 0; i < depth; i++) {
-        uint8_t* ptr = &(data[i*BASE_SIZE]);
-        print_base(ptr, indent + 4);
+        uint8_t* ptr = &(data[i*BASE_SIZE + GENOTYPE_SIZE]);
+        std::cout << ptr[0];
+        //print_base(ptr, indent + 4);
     }
+    std::cout << std::endl;
+
+    do_indent(indent + 2);
+    std::cout << "quals:" << std::endl;
+    do_indent(indent + 4);
+    for (uint64_t i = 0; i < depth; i++) {
+        uint8_t* ptr = &(data[i*BASE_SIZE + GENOTYPE_SIZE]);
+        std::cout << ptr[1];
+    }
+    std::cout << std::endl;
 }
 
 void print_locus(uint8_t* data, uint64_t num_samples, uint64_t depth, uint64_t indent) {
@@ -128,10 +180,10 @@ void print_locus(uint8_t* data, uint64_t num_samples, uint64_t depth, uint64_t i
     std::cout << "samples: " << std::endl;
 
     const uint64_t base_array_size = depth*BASE_SIZE;
-    const uint64_t sample_size = TRUE_GENO_SIZE + base_array_size;
+    const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
 
     for (uint64_t i = 0; i < num_samples; i++) {
-        uint8_t* ptr = &(data[i*sample_size + TRUE_GENO_SIZE]);
+        uint8_t* ptr = &(data[i*sample_size]);
         print_sample(ptr, depth, indent + 4);
     }
 }
@@ -141,7 +193,7 @@ void print(uint8_t* data, uint64_t num_loci, uint64_t num_samples, uint64_t dept
     std::cout << "loci:" << std::endl;
 
     const uint64_t base_array_size = depth*BASE_SIZE;
-    const uint64_t sample_size = TRUE_GENO_SIZE + base_array_size;
+    const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
     const uint64_t locus_size = sample_size*num_samples;
 
     for (uint64_t i = 0; i < num_loci; i++) {
@@ -155,9 +207,9 @@ int main() {
 
     std::ofstream file("file.bin");
 
-    const uint64_t num_loci = 2;
-    const uint64_t num_samples = 2;
-    const uint64_t depth = 2;
+    const uint64_t num_loci = 1;
+    const uint64_t num_samples = 8;
+    const uint64_t depth = 60;
     auto fv = fakevar_create(num_loci, num_samples, depth);
 
     print(fv->data, num_loci, num_samples, depth, 0);
