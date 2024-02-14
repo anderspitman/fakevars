@@ -59,20 +59,34 @@ std::mt19937 rng(dev());
 std::uniform_int_distribution<std::mt19937::result_type> base_dist(0, NUM_BASES-1);
 std::uniform_int_distribution<std::mt19937::result_type> geno_dist(0, GENOTYPE_SIZE-1);
 std::uniform_int_distribution<std::mt19937::result_type> allele_dist(0, ALLELES_SIZE-1);
-
 const uint64_t MIN_PHRED_QUAL = 0x21;
 const uint64_t MAX_PHRED_QUAL = 0x7e;
 std::uniform_int_distribution<std::mt19937::result_type> qual_dist(MIN_PHRED_QUAL, MAX_PHRED_QUAL);
+std::uniform_real_distribution<> error_dist(0.0, 1.0);
+
+const double ERROR_RATE = 0.02;
 
 
 void gen_base_array(uint8_t* data, uint64_t depth, char* true_genotype) {
 
     uint8_t* ptr;
+
     for (uint64_t i = 0; i < depth; i++) {
-        // Sample randomly from true_genotype
-        auto idx = geno_dist(rng);
+
         ptr = (uint8_t*)&(data[i*BASE_SIZE]);
-        ptr[0] = true_genotype[idx];
+
+        double error = error_dist(rng);
+        if (error < ERROR_RATE) {
+            // Simulate error by choosing random base
+            auto idx = base_dist(rng);
+            ptr[0] = BASES[idx];
+        }
+        else {
+            // Sample randomly from true_genotype
+            auto idx = geno_dist(rng);
+            ptr[0] = true_genotype[idx];
+        }
+
         auto qual = qual_dist(rng);
         ptr[1] = qual;
     }
