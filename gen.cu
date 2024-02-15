@@ -28,17 +28,6 @@ __device__ uint64_t rand_in_range(uint64_t min, uint64_t max, curandState_t* sta
         return (rand * (max - min + 0.999999)) + min;
 }
 
-__global__ void init_rand_states(uint64_t num_loci, curandState* state, uint64_t seed) {
-        int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-        if (tid > num_loci - 1) {
-                //printf("ditching tid: %llu\n", tid);
-                return;
-        }
-
-        curand_init(seed, tid, 0, &state[tid]);
-}
-
 __device__ void gen_base_array_kernel(
         uint8_t* data,
         uint64_t depth,
@@ -117,6 +106,7 @@ __global__ void gen_loci_kernel(
         uint64_t num_loci,
         uint64_t num_samples,
         uint64_t depth,
+        uint64_t rand_seed,
         curandState* rand_state)
 {
         uint64_t tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -126,6 +116,8 @@ __global__ void gen_loci_kernel(
                 //printf("ditching tid: %llu\n", tid);
                 return;
         }
+
+        curand_init(rand_seed, tid, 0, &rand_state[tid]);
 
         curandState local_rand_state = rand_state[tid];
 
@@ -155,81 +147,41 @@ __global__ void gen_loci_kernel(
         }
 }
 
-//__global__ void gen_loci_kernel(
-//        uint8_t* data,
-//        uint64_t num_loci,
-//        uint64_t num_samples,
-//        uint64_t depth,
-//        curandState* rand_state)
-//{
-//        int tid = threadIdx.x + blockIdx.x * blockDim.x;
-//        curandState local_rand_state = rand_state[tid];
-//
-//        const uint64_t base_array_size = depth*BASE_SIZE;
-//        const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
-//        const uint64_t locus_size = ALLELES_SIZE + sample_size*num_samples;
-//
-//        uint8_t* ptr = data;
-//        for (uint64_t i = 0; i < num_loci; i++) {
-//                gen_locus_kernel(ptr, num_samples, depth, &local_rand_state);
-//                ptr += locus_size;
-//        }
-//}
+void gen_data(uint64_t num_loci, uint64_t num_samples, uint64_t depth, uint8_t** d_data, uint64_t *size) {
 
-
-uint8_t* gen_data_gpu(uint64_t num_loci, uint64_t num_samples, uint64_t depth) {
         const uint64_t n_blocks = ceil(num_loci/256.0);
         const uint64_t n_threads = 256;
-        //const uint64_t seed = 9999;
         const uint64_t seed = time(NULL);
 
-        //printf("n_blocks: %llu, n_threads: %llu, num_loci: %llu, *: %llu\n", n_blocks, n_threads, num_loci, n_blocks*n_threads);
-
         curandState* d_rand_states;
-        cudaError_t err;
 
-        err = cudaMalloc(&d_rand_states, num_loci*sizeof(curandState));
-        assert(err == cudaSuccess);
-
-        init_rand_states<<<n_blocks, n_threads>>>(num_loci, d_rand_states, seed);
-        cudaDeviceSynchronize();
-
-
-        uint8_t* h_data;
+        cudaMalloc(&d_rand_states, num_loci*sizeof(curandState));
+        cudaCheckError();
 
         const uint64_t base_array_size = depth*BASE_SIZE;
         const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
         const uint64_t locus_size = ALLELES_SIZE + sample_size*num_samples;
         const uint64_t total_size = locus_size*num_loci;
 
-        const uint64_t size = total_size;
+        *size = total_size;
 
-        err = cudaMallocHost(&h_data, size);
-        assert(err == cudaSuccess);
-
-        for (uint64_t i = 0; i < total_size; i++) {
-                h_data[i] = 'X';
-        }
-
-        uint8_t* d_data;
-        err = cudaMalloc(&d_data, size);
-        assert(err == cudaSuccess);
-
-        char h_locus_alleles[2] = { 'A', 'T' };
-
-        char* d_locus_alleles;
-        cudaMalloc(&d_locus_alleles, ALLELES_SIZE);
-        cudaCheckError();
-        cudaMemcpy(d_locus_alleles, h_locus_alleles, GENOTYPE_SIZE, cudaMemcpyHostToDevice);
+        cudaMalloc(d_data, *size);
         cudaCheckError();
 
-        gen_loci_kernel<<<n_blocks, n_threads>>>(d_data, num_loci, num_samples, depth, d_rand_states);
+        gen_loci_kernel<<<n_blocks, n_threads>>>(*d_data, num_loci, num_samples, depth, seed, d_rand_states);
         cudaDeviceSynchronize();
-
-        err = cudaMemcpy(h_data, d_data, size, cudaMemcpyDeviceToHost);
-        cudaCheckError();
-
-        return h_data;
 }
 
 
+void gen_data_gpu(uint64_t num_loci, uint64_t num_samples, uint64_t depth, uint8_t** h_data, uint64_t *size) {
+
+        uint8_t* d_data;
+
+        gen_data(num_loci, num_samples, depth, &d_data, size);
+
+        cudaMallocHost(h_data, *size);
+        cudaCheckError();
+
+        cudaMemcpy(*h_data, d_data, *size, cudaMemcpyDeviceToHost);
+        cudaCheckError();
+}

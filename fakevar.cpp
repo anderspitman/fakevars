@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <random>
+#include <unistd.h>
 
 //enum class Genotype : uint8_t {
 //    AA = 0x30, AC, AG, AT,
@@ -229,48 +230,44 @@ void print(uint8_t* data, uint64_t num_loci, uint64_t num_samples, uint64_t dept
     }
 }
 
-uint8_t* gen_data_cpu(uint64_t num_loci, uint64_t num_samples, uint32_t depth) {
+void gen_data_cpu(uint64_t num_loci, uint64_t num_samples, uint32_t depth, uint8_t** data, uint64_t* size) {
 
     const uint64_t base_array_size = depth*BASE_SIZE;
     const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
     const uint64_t locus_size = ALLELES_SIZE + sample_size*num_samples;
     const uint64_t total_size = locus_size*num_loci;
 
-    uint8_t* data = (uint8_t*)malloc(total_size);
+    *size = total_size;
+    *data = (uint8_t*)malloc(*size);
 
-    uint8_t* ptr = data;
+    uint8_t* ptr = *data;
     for (uint64_t i = 0; i < num_loci; i++) {
         //std::cout << "Gen locus: " << i << std::endl;
         gen_locus(ptr, num_samples, depth);
         ptr += locus_size;
     }
-
-    return data;
 }
 
-uint8_t* gen_data_gpu(uint64_t num_loci, uint64_t num_samples, uint64_t depth);
+void gen_data_gpu(uint64_t num_loci, uint64_t num_samples, uint64_t depth, uint8_t** h_data, uint64_t *size);
 
 int main() {
 
-    const uint64_t num_loci = 1000000;
+    const uint64_t num_loci = 10000000;
     const uint64_t num_samples = 8;
     const uint64_t depth = 60;
 
-    uint8_t* data = gen_data_gpu(num_loci, num_samples, depth);
-    //uint8_t* data = gen_data_cpu(num_loci, num_samples, depth);
-    
+    uint8_t* data;
+    uint64_t size;
+
+    gen_data_gpu(num_loci, num_samples, depth, &data, &size);
+    //gen_data_cpu(num_loci, num_samples, depth, &data, &size);
 
     //print(data, num_loci, num_samples, depth, 0);
-
-    //const uint64_t base_array_size = depth*BASE_SIZE;
-    //const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
-    //const uint64_t locus_size = ALLELES_SIZE + sample_size*num_samples;
-    //const uint64_t total_size = locus_size*num_loci;
 
     //uint64_t first_invalid_byte_idx = 0;
     //uint64_t last_invalid_byte_idx = 0;
     //uint64_t invalid_count = 0;
-    //for (uint64_t i = 0; i < total_size; i++) {
+    //for (uint64_t i = 0; i < size; i++) {
     //    // unprintable
     //    //if (data[i] < 33 || data[i] > 126) {
     //    if (data[i] == 232) {
@@ -282,13 +279,6 @@ int main() {
     //        invalid_count += 1;
     //    }
     //}
-
-    //printf("%llu invalid bytes starting at %llu and ending at %llu\n", invalid_count, first_invalid_byte_idx, last_invalid_byte_idx);
-
-    //std::cout << "base_array_size: " << base_array_size << std::endl;
-    //std::cout << "sample_size: " << sample_size << std::endl;
-    //std::cout << "locus_size: " << locus_size << std::endl;
-    //std::cout << "total_size: " << total_size << std::endl;
 
     //std::ofstream file("file.bin");
     //file.write((char*)data, total_size);
