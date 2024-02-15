@@ -149,6 +149,7 @@ Fakevar* fakevar_create(uint64_t num_loci, uint64_t num_samples, uint32_t depth)
 
     uint8_t* ptr = fv->data;
     for (uint64_t i = 0; i < num_loci; i++) {
+        //std::cout << "Gen locus: " << i << std::endl;
         gen_locus(ptr, num_samples, depth);
         ptr += locus_size;
     }
@@ -228,19 +229,69 @@ void print(uint8_t* data, uint64_t num_loci, uint64_t num_samples, uint64_t dept
     }
 }
 
+uint8_t* gen_data_cpu(uint64_t num_loci, uint64_t num_samples, uint32_t depth) {
+
+    const uint64_t base_array_size = depth*BASE_SIZE;
+    const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
+    const uint64_t locus_size = ALLELES_SIZE + sample_size*num_samples;
+    const uint64_t total_size = locus_size*num_loci;
+
+    uint8_t* data = (uint8_t*)malloc(total_size);
+
+    uint8_t* ptr = data;
+    for (uint64_t i = 0; i < num_loci; i++) {
+        //std::cout << "Gen locus: " << i << std::endl;
+        gen_locus(ptr, num_samples, depth);
+        ptr += locus_size;
+    }
+
+    return data;
+}
+
+uint8_t* gen_data_gpu(uint64_t num_loci, uint64_t num_samples, uint64_t depth);
 
 int main() {
 
-    std::ofstream file("file.bin");
-
-    const uint64_t num_loci = 1;
-    const uint64_t num_samples = 2;
+    const uint64_t num_loci = 1000000;
+    const uint64_t num_samples = 8;
     const uint64_t depth = 60;
-    auto fv = fakevar_create(num_loci, num_samples, depth);
 
-    print(fv->data, num_loci, num_samples, depth, 0);
+    uint8_t* data = gen_data_gpu(num_loci, num_samples, depth);
+    //uint8_t* data = gen_data_cpu(num_loci, num_samples, depth);
+    
 
-    file.write((char*)fv->data, fv->size);
+    //print(data, num_loci, num_samples, depth, 0);
+
+    //const uint64_t base_array_size = depth*BASE_SIZE;
+    //const uint64_t sample_size = GENOTYPE_SIZE + base_array_size;
+    //const uint64_t locus_size = ALLELES_SIZE + sample_size*num_samples;
+    //const uint64_t total_size = locus_size*num_loci;
+
+    //uint64_t first_invalid_byte_idx = 0;
+    //uint64_t last_invalid_byte_idx = 0;
+    //uint64_t invalid_count = 0;
+    //for (uint64_t i = 0; i < total_size; i++) {
+    //    // unprintable
+    //    //if (data[i] < 33 || data[i] > 126) {
+    //    if (data[i] == 232) {
+    //        if (first_invalid_byte_idx == 0) {
+    //            first_invalid_byte_idx = i;
+    //        }
+    //        last_invalid_byte_idx = i;
+    //        //printf("Invalid byte at %d: %llu\n", i, data[i]);
+    //        invalid_count += 1;
+    //    }
+    //}
+
+    //printf("%llu invalid bytes starting at %llu and ending at %llu\n", invalid_count, first_invalid_byte_idx, last_invalid_byte_idx);
+
+    //std::cout << "base_array_size: " << base_array_size << std::endl;
+    //std::cout << "sample_size: " << sample_size << std::endl;
+    //std::cout << "locus_size: " << locus_size << std::endl;
+    //std::cout << "total_size: " << total_size << std::endl;
+
+    //std::ofstream file("file.bin");
+    //file.write((char*)data, total_size);
 
     return 0;
 }
